@@ -8,7 +8,18 @@ dist-ssr/
 # Environment variables & secrets
 .env
 .env.local
-.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+*serviceAccount*.json
+*service-account*.json
+
+# Firebase / Vercel / Logs
+.firebase/
+.vercel/
+firebase-debug*.log
+*.log
 
 # Editor & OS files
 .DS_Store

@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userDoc().data.role == 'admin' && userDoc().data.isSuspended != true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Strictly prevent privilege escalation during public signup
+      allow create: if isOwner(userId)
+        && request.resource.data.role == 'student'
+        && request.resource.data.isSuspended != true;
+      allow update: if isAdmin()
+        || (isOwner(userId)
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.isSuspended == resource.data.isSuspended);
+      allow delete: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      // Public explore can read non-removed public report fields (privateDetails live in /reportSecrets)
+      allow read: if resource.data.status != 'REMOVED' || isAdmin() || isOwner(resource.data.reporterId);
+      allow create: if isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status in ['ACTIVE', 'AVAILABLE'];
+      allow update: if isAdmin()
+        || (isOwner(resource.data.reporterId)
+          && request.resource.data.reporterId == resource.data.reporterId);
+      allow delete: if isAdmin() || isOwner(resource.data.reporterId);
+    }
+
+    match /reportSecrets/{reportId} {
+      // Only report creator or admin can read private identifying info
+      allow read: if isAdmin()
+        || (isSignedIn() && resource.data.reporterId == request.auth.uid);
+      allow create, update: if isSignedIn()
+        && request.resource.data.reporterId == request.auth.uid;
+      allow delete: if isAdmin()
+        || (isSignedIn() && resource.data.reporterId == request.auth.uid);
+    }
+
+    match /matches/{matchId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /recoveryRequests/{requestId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.finderId == request.auth.uid));
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isAdmin()
+        || (isSignedIn() && (resource.data.ownerId == request.auth.uid || resource.data.finderId == request.auth.uid));
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update: if isAdmin()
+        || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow delete: if isAdmin()
+        || (isSignedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    match /adminSettings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() || isSignedIn();
+      allow update, delete: if false;
+    }
+  }
+}
